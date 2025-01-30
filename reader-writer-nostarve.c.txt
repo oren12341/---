@@ -1,0 +1,72 @@
+#include <stdio.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include <unistd.h>
+
+sem_t lock, writelock, queue; // Semaphores for synchronization
+int readcount = 0;            // Number of active readers
+
+void *reader(void *arg) {
+    sem_wait(&queue); // Wait for turn in the queue
+    sem_wait(&lock);  // Protect access to readcount
+    readcount++;
+    if (readcount == 1) {
+        sem_wait(&writelock); // First reader locks the writer
+    }
+    sem_post(&lock); // Release access to readcount
+    sem_post(&queue); // Leave the queue
+
+    // Reading section
+    printf("Reader %ld is reading\n", (long)arg);
+    sleep(1); // Simulate reading
+
+    sem_wait(&lock);
+    readcount--;
+    if (readcount == 0) {
+        sem_post(&writelock); // Last reader unlocks the writer
+    }
+    sem_post(&lock);
+
+    return NULL;
+}
+
+void *writer(void *arg) {
+    sem_wait(&queue);    // Wait for turn in the queue
+    sem_wait(&writelock); // Lock the writer
+    sem_post(&queue);    // Leave the queue
+
+    // Writing section
+    printf("Writer %ld is writing\n", (long)arg);
+    sleep(2); // Simulate writing
+    sem_post(&writelock); // Unlock the writer
+
+    return NULL;
+}
+
+int main() {
+    pthread_t r[3], w[2];
+
+    sem_init(&lock, 0, 1);      // Initialize lock semaphore
+    sem_init(&writelock, 0, 1); // Initialize writelock semaphore
+    sem_init(&queue, 0, 1);     // Initialize queue semaphore
+
+    // Create reader threads
+    for (long i = 0; i < 3; i++) {
+        pthread_create(&r[i], NULL, reader, (void *)i);
+    }
+
+    // Create writer threads
+    for (long i = 0; i < 2; i++) {
+        pthread_create(&w[i], NULL, writer, (void *)i);
+    }
+
+    // Wait for all threads to finish
+    for (int i = 0; i < 3; i++) {
+        pthread_join(r[i], NULL);
+    }
+    for (int i = 0; i < 2; i++) {
+        pthread_join(w[i], NULL);
+    }
+
+    return 0;
+}

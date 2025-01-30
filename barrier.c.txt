@@ -1,0 +1,48 @@
+#include <stdio.h>
+#include <pthread.h>
+#include <semaphore.h>
+
+#define N 5 // Number of threads
+
+sem_t barrier; // Semaphore for the barrier
+sem_t mutex;   // Semaphore for mutual exclusion
+int count = 0; // Shared counter to track the number of threads
+
+void barrier_wait() {
+    sem_wait(&mutex); // Enter critical section
+    count++;
+    if (count == N) {
+        sem_post(&barrier); // Release threads when all have arrived
+    }
+    sem_post(&mutex); // Exit critical section
+
+    sem_wait(&barrier); // Wait for other threads
+    sem_post(&barrier); // Allow other threads to proceed
+}
+
+void *threadFunc(void *arg) {
+    printf("P1 from thread %ld\n", (long)arg); // Code before the barrier
+    barrier_wait();                           // Synchronization point
+    printf("P2 from thread %ld\n", (long)arg); // Code after the barrier
+    return NULL;
+}
+
+int main() {
+    pthread_t threads[N];
+
+    // Initialize semaphores
+    sem_init(&barrier, 0, 0);
+    sem_init(&mutex, 0, 1);
+
+    // Create threads
+    for (long i = 0; i < N; i++) {
+        pthread_create(&threads[i], NULL, threadFunc, (void *)i);
+    }
+
+    // Wait for threads to finish
+    for (int i = 0; i < N; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+    return 0;
+}
