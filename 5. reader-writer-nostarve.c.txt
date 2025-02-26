@@ -1,0 +1,104 @@
+#include <stdio.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include <unistd.h>
+
+// Reader-Writer Lock Structure
+typedef struct {
+    sem_t lock;      // Semaphore to protect readcount
+    sem_t writelock; // Semaphore to block writers when readers are active
+    sem_t queue;     // Semaphore to enforce order fairness
+    int readcount;   // Number of active readers
+} rwlock_t;
+
+// Initialize the reader-writer lock
+void rwlock_init(rwlock_t *rw) {
+    rw->readcount = 0;
+    sem_init(&rw->lock, 0, 1);
+    sem_init(&rw->writelock, 0, 1);
+    sem_init(&rw->queue, 0, 1); // Queue ensures fairness
+}
+
+// Acquire read lock with fairness
+void rwlock_acquire_readlock(rwlock_t *rw) {
+    sem_wait(&rw->queue); // Ensure order fairness
+    sem_wait(&rw->lock);
+    rw->readcount++;
+    if (rw->readcount == 1) {
+        sem_wait(&rw->writelock); // First reader locks the writer
+    }
+    sem_post(&rw->lock);
+    sem_post(&rw->queue); // Allow next in queue
+}
+
+// Release read lock
+void rwlock_release_readlock(rwlock_t *rw) {
+    sem_wait(&rw->lock);
+    rw->readcount--;
+    if (rw->readcount == 0) {
+        sem_post(&rw->writelock); // Last reader unlocks writer
+    }
+    sem_post(&rw->lock);
+}
+
+// Acquire write lock with fairness
+void rwlock_acquire_writelock(rwlock_t *rw) {
+    sem_wait(&rw->queue);    // Ensure order fairness
+    sem_wait(&rw->writelock);
+}
+
+// Release write lock
+void rwlock_release_writelock(rwlock_t *rw) {
+    sem_post(&rw->writelock);
+    sem_post(&rw->queue); // Allow next in queue
+}
+
+// Reader function
+void *reader(void *arg) {
+    rwlock_t *rw = (rwlock_t *)arg;
+    while (1) { // Infinite loop to simulate multiple reads
+        rwlock_acquire_readlock(rw);
+        printf("Reader is reading\n");
+        sleep(1); // Simulate reading
+        rwlock_release_readlock(rw);
+        sleep(1); // Prevent immediate re-entry
+    }
+    return NULL;
+}
+
+// Writer function
+void *writer(void *arg) {
+    rwlock_t *rw = (rwlock_t *)arg;
+    while (1) { // Infinite loop to simulate multiple writes
+        rwlock_acquire_writelock(rw);
+        printf("Writer is writing\n");
+        sleep(2); // Simulate writing
+        rwlock_release_writelock(rw);
+        sleep(1); // Prevent immediate re-entry
+    }
+    return NULL;
+}
+
+int main() {
+    pthread_t r[5], w[2];
+    rwlock_t rw;
+
+    rwlock_init(&rw);
+
+    // Create reader threads
+    for (int i = 0; i < 3; i++) {
+        pthread_create(&r[i], NULL, reader, &rw);
+    }
+
+    // Create writer threads
+    for (int i = 0; i < 2; i++) {
+        pthread_create(&w[i], NULL, writer, &rw);
+    }
+
+    // Keep the program running
+    while (1) {
+        sleep(10);
+    }
+
+    return 0;
+}

@@ -1,0 +1,80 @@
+#include <stdio.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include <unistd.h>
+
+typedef struct {
+    sem_t mutex;     // הסמפור העיקרי ששומר על הגישה למשאב
+    sem_t turnstile; // סמפור שמשמש לטיפול בתור הממתינים
+    int waiting;     // מונה של התהליכים הממתינים
+} nostarve_mutex_t;
+
+void nostarve_mutex_init(nostarve_mutex_t *m) {
+    sem_init(&m->mutex, 0, 1);     // מנעול פנוי בהתחלה
+    sem_init(&m->turnstile, 0, 1); // תור ריק בהתחלה
+    m->waiting = 0;                // אין ממתינים בהתחלה
+}
+
+void nostarve_mutex_acquire(nostarve_mutex_t *m) {
+    // הבטחת הוגנות באמצעות מעבר דרך "שער מסתובב"
+    sem_wait(&m->turnstile);
+    sem_post(&m->turnstile);
+    
+    // ניסיון לרכוש את המנעול
+    sem_wait(&m->mutex);
+}
+
+void nostarve_mutex_release(nostarve_mutex_t *m) {
+    // שחרור המנעול
+    sem_post(&m->mutex);
+}
+
+// נגדיר מבנה שיכיל את המידע שנעביר לפונקציית ה-thread
+typedef struct {
+    nostarve_mutex_t *mutex;
+    int id;
+} thread_data_t;
+
+// פונקציה להדגמת השימוש במנעול
+void *thread_function(void *arg) {
+    thread_data_t *data = (thread_data_t *)arg;
+    nostarve_mutex_t *m = data->mutex;
+    int id = data->id;
+    
+    printf("Thread %d trying to acquire lock\n", id);
+    nostarve_mutex_acquire(m);
+    
+    printf("Thread %d acquired lock, working...\n", id);
+    // סימולציה של עבודה
+    sleep(2);
+    
+    printf("Thread %d releasing lock\n", id);
+    nostarve_mutex_release(m);
+    
+    return NULL;
+}
+
+int main() {
+    nostarve_mutex_t m;
+    pthread_t threads[5];
+    thread_data_t thread_data[5];
+    
+    // אתחול המנעול
+    nostarve_mutex_init(&m);
+    
+    // יצירת מספר threads שמתחרים על המנעול
+    for (int i = 0; i < 5; i++) {
+        thread_data[i].mutex = &m;
+        thread_data[i].id = i;
+        pthread_create(&threads[i], NULL, thread_function, &thread_data[i]);
+        // הפרדה קלה בין היצירות כדי להדגים את ההוגנות
+        usleep(100000);
+    }
+    
+    // המתנה לסיום כל ה-threads
+    for (int i = 0; i < 5; i++) {
+        pthread_join(threads[i], NULL);
+    }
+    
+    return 0;
+}
